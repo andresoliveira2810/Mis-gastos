@@ -1,6 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { SHARED_SHEET_ID, getNowMesAnio } from "../shared/config.js";
 
 // ─── CONFIG ────────────────────────────────────────────────────────────────
+// Los IDs de sheet y categorías viven en shared/config.js (se comparten con las
+// serverless functions de /api). Acá solo queda el tema visual de cada usuario.
 const CONFIG = {
   andres: {
     nombre: "Andrés",
@@ -24,30 +27,6 @@ const CONFIG = {
   },
 };
 
-const SHARED_SHEET_ID = "19KYe9D9rnrv8sjqyFWinbm2NOp94j-3en7moNS7nFmA";
-
-// Mapeo exacto de categorías a tabla y columna en el sheet compartido
-// Tabla "Principio del mes" (cols B-H): Alquiler, Servicios, Supermercado, Verduleria, Carniceria, Tarjeta, Varios
-// Tabla "Resto del mes" (cols B-H): Servicios, Supermercado, Verduleria, Carniceria, Perris, Varios, Casa
-const SHARED_CATS_PRINCIPIO = ["Alquiler", "Servicios", "Supermercado", "Verduleria", "Carniceria", "Tarjeta", "Varios"];
-const SHARED_CATS_RESTO = ["Servicios", "Supermercado", "Verduleria", "Carniceria", "Perris", "Varios", "Casa"];
-const ALL_SHARED_CATS = [...new Set([...SHARED_CATS_PRINCIPIO, ...SHARED_CATS_RESTO])];
-
-const CATEGORIES_ANDRES = [
-  "Sueldo","Otros ingresos","Reintegro tarjeta","Rescate Fima",
-  "Tarjeta","Alquiler","Agua","EPE","Internet","Gas",
-  "Casa","Peluquería","Combustible","Supermercado","Verduleria",
-  "Gastos comidas","Inversiones","Plataformas y seguros","Gastos varios","Regalos",
-];
-const CATEGORIES_CLARITA = [
-  "Sueldo","Otros ingresos","Tarjeta","Alquiler","Servicios",
-  "Supermercado","Verduleria","Carniceria","Casa","Peluquería",
-  "Combustible","Gastos comidas","Inversiones","Gastos varios","Regalos",
-];
-
-const NOW_MONTH = "Junio";
-const NOW_YEAR = 2026;
-
 // ─── ICONS ─────────────────────────────────────────────────────────────────
 const Icons = {
   mic: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>,
@@ -59,38 +38,16 @@ const Icons = {
   pdf: <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>,
 };
 
-// ─── PROMPT ────────────────────────────────────────────────────────────────
-const buildPrompt = (usuario) => {
-  const cats = usuario === "andres" ? CATEGORIES_ANDRES : CATEGORIES_CLARITA;
-  const nombre = CONFIG[usuario].nombre;
-  return `Sos un asistente de finanzas de ${nombre} (argentino/a). Interpretás lo que dice y devolvés JSON puro, sin markdown.
-
-Categorías personales disponibles: ${cats.join(", ")}
-Categorías que pueden ser compartidas: ${ALL_SHARED_CATS.join(", ")}
-Mes actual: ${NOW_MONTH} ${NOW_YEAR}
-
-Devolvé SOLO este JSON:
-{
-  "tipo": "gasto" | "ingreso" | "tarjeta_consumo" | "tarjeta_cuotas" | "desconocido",
-  "categoria": "nombre exacto de la lista",
-  "monto": 12345.67,
-  "mes": "${NOW_MONTH}",
-  "anio": ${NOW_YEAR},
-  "detalle": "descripción breve o null",
-  "tarjeta": "nombre o null",
-  "cuotas": null o número entero,
-  "monto_por_cuota": null o número,
-  "fecha_compra": null o "DD/MM/YYYY",
-  "puede_ser_compartido": true o false,
-  "resumen": "una frase corta, ej: Supermercado por $80.000"
+// ─── ERROR MESSAGES ────────────────────────────────────────────────────────
+// Traduce los códigos de error "fail loudly" de lib/googleSheets.js a algo
+// legible. Si no reconoce el código, muestra el mensaje crudo igual.
+function friendlyError(msg) {
+  if (!msg) return null;
+  if (msg.includes("MONTH_COLUMN_NOT_VISIBLE")) return "La columna del mes actual está oculta en la planilla — desocultala en Google Sheets para poder guardar ahí.";
+  if (msg.includes("CATEGORY_NOT_FOUND")) return "No encontré esa categoría en la planilla (puede estar oculta o con otro nombre).";
+  if (msg.includes("CONSUMO_TABLE_NOT_FOUND")) return "No encontré la tabla de consumos en la pestaña Tarjeta.";
+  return msg;
 }
-
-Reglas:
-- gastos → monto NEGATIVO. ingresos → POSITIVO.
-- "puede_ser_compartido": true si la categoría está en: ${ALL_SHARED_CATS.join(", ")}
-- Si no mencionan mes → usá ${NOW_MONTH}
-- resumen: muy corto, sin el mes`;
-};
 
 // ─── SPEECH HOOK ───────────────────────────────────────────────────────────
 function useSpeech(onResult) {
@@ -121,26 +78,6 @@ function useSpeech(onResult) {
   return { recording, supported, toggle };
 }
 
-// ─── SHARED SHEET WRITER ───────────────────────────────────────────────────
-const buildSharedInstruction = (categoria, monto, nombreUsuario) => {
-  const abs = Math.abs(monto);
-  const enPrincipio = SHARED_CATS_PRINCIPIO.includes(categoria);
-  const enResto = SHARED_CATS_RESTO.includes(categoria);
-  const tabla = enPrincipio && !enResto ? "Principio del mes" : enResto ? "Resto del mes" : "Principio del mes";
-
-  return `En el Google Sheet compartido (ID: ${SHARED_SHEET_ID}) hay dos tablas:
-
-TABLA "Principio del mes" con columnas: Alquiler, Servicios, Supermercado, Verduleria, Carniceria, Tarjeta, Varios. Filas: MONTO | Andrés % | Andrés real | Clara % | Clara real
-TABLA "Resto del mes" con columnas: Servicios, Supermercado, Verduleria, Carniceria, Perris, Varios, Casa. Filas: MONTO | Andrés % | Andrés real | Clara % | Clara real
-
-Necesito que en la tabla "${tabla}", columna "${categoria}":
-1. Sumás $${abs.toLocaleString("es-AR")} a la celda MONTO
-2. Sumás $${abs.toLocaleString("es-AR")} a la celda "${nombreUsuario} real"
-(Las celdas "% " las calcula el sheet con fórmulas, no las toques)
-
-Respondé "OK" si lo hiciste, o "ERROR: motivo" si no pudiste.`;
-};
-
 // ─── MAIN APP ──────────────────────────────────────────────────────────────
 export default function App() {
   const [screen, setScreen] = useState("login");
@@ -151,7 +88,9 @@ export default function App() {
   const [compartido, setCompartido] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveResult, setSaveResult] = useState(null);
+  const [saveDetail, setSaveDetail] = useState(null);
   const [history, setHistory] = useState([]);
+  const { mes: NOW_MONTH, anio: NOW_YEAR } = getNowMesAnio();
   // PDF reconciliation
   const [pdfData, setPdfData] = useState(null);       // parsed consumos from PDF
   const [pdfLoading, setPdfLoading] = useState(false);
@@ -182,22 +121,17 @@ export default function App() {
     if (!input.trim() || processing) return;
     setProcessing(true);
     try {
-      const resp = await fetch("https://api.anthropic.com/v1/messages", {
+      const resp = await fetch("/api/parse-expense", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-6", max_tokens: 600,
-          system: buildPrompt(usuario),
-          messages: [{ role: "user", content: input.trim() }]
-        })
+        body: JSON.stringify({ usuario, texto: input.trim() }),
       });
-      const data = await resp.json();
-      const text = data.content?.find(b => b.type === "text")?.text || "";
-      const result = JSON.parse(text.replace(/```json|```/g, "").trim());
+      const result = await resp.json();
+      if (!resp.ok) throw new Error(result.error || "error parseando");
       setParsed(result);
-      // Auto-toggle compartido si la categoría suele ser compartida
       setCompartido(false);
       setSaveResult(null);
+      setSaveDetail(null);
       setScreen("confirm");
     } catch {
       setParsed({ tipo: "desconocido", resumen: "No pude entender. Intentá de nuevo." });
@@ -207,62 +141,30 @@ export default function App() {
   };
 
   // ── Save ──
+  // Llama a /api/save-expense, que hace el dual-write real (sheet personal + sheet
+  // compartido si corresponde) con la Sheets API v4 — ya no usa instrucciones en
+  // lenguaje natural ni el Drive MCP.
   const handleSave = async () => {
     if (!parsed || parsed.tipo === "desconocido") return;
     setSaving(true);
     try {
-      const sheetId = cfg.sheetId;
-
-      // 1. Siempre escribir en sheet personal
-      const personalInstr = `Actualizá el Google Sheet personal de ${cfg.nombre} (ID: ${sheetId}).
-Buscá la fila "${parsed.categoria}" y la columna "${parsed.mes}" y sumá el valor ${parsed.monto} a la celda.
-${parsed.tipo === "tarjeta_consumo" ? `También agregá en la sección "Consumos tarjeta del mes": Tarjeta=${parsed.tarjeta}, Detalle=${parsed.detalle}, Monto=${Math.abs(parsed.monto)}` : ""}
-${parsed.tipo === "tarjeta_cuotas" ? `También agregá en la sección de cuotas: Detalle=${parsed.detalle}, Tarjeta=${parsed.tarjeta}, Total=${Math.abs(parsed.monto)}, Cuotas=${parsed.cuotas}, Por cuota=${parsed.monto_por_cuota}` : ""}
-Respondé "OK" o "ERROR: motivo".`;
-
-      const personalResp = await fetch("https://api.anthropic.com/v1/messages", {
+      const resp = await fetch("/api/save-expense", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-6", max_tokens: 300,
-          mcp_servers: [{ type: "url", url: "https://drivemcp.googleapis.com/mcp/v1", name: "gdrive" }],
-          system: "Actualizá Google Sheets con las herramientas disponibles. Respondé solo OK o ERROR.",
-          messages: [{ role: "user", content: personalInstr }]
-        })
+        body: JSON.stringify({ usuario, compartido, parsed }),
       });
-      const personalData = await personalResp.json();
-      const personalResult = personalData.content?.find(b => b.type === "text")?.text || "";
-      const personalOk = /ok/i.test(personalResult) && !/error/i.test(personalResult);
-
-      // 2. Si es compartido, también escribir en sheet compartido
-      let sharedOk = true;
-      if (compartido && ALL_SHARED_CATS.includes(parsed.categoria)) {
-        const sharedInstr = buildSharedInstruction(parsed.categoria, parsed.monto, cfg.nombre);
-        const sharedResp = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            model: "claude-sonnet-4-6", max_tokens: 300,
-            mcp_servers: [{ type: "url", url: "https://drivemcp.googleapis.com/mcp/v1", name: "gdrive" }],
-            system: "Actualizá Google Sheets con las herramientas disponibles. Respondé solo OK o ERROR.",
-            messages: [{ role: "user", content: sharedInstr }]
-          })
-        });
-        const sharedData = await sharedResp.json();
-        const sharedResult = sharedData.content?.find(b => b.type === "text")?.text || "";
-        sharedOk = /ok/i.test(sharedResult) && !/error/i.test(sharedResult);
-      }
-
-      const ok = personalOk && sharedOk;
-      setSaveResult(ok ? "ok" : "partial");
-      if (ok || personalOk) {
+      const data = await resp.json();
+      setSaveResult(data.estado || "error");
+      setSaveDetail(data);
+      if (data.estado === "ok" || data.estado === "partial") {
         setHistory(prev => [{
           ...parsed, compartido, id: Date.now(),
           hora: new Date().toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })
         }, ...prev].slice(0, 50));
       }
-    } catch {
+    } catch (err) {
       setSaveResult("error");
+      setSaveDetail({ error: err.message });
     }
     setSaving(false);
   };
@@ -303,6 +205,9 @@ Respondé "OK" o "ERROR: motivo".`;
   );
 
   // ── PDF: read & parse ──
+  // 1) /api/parse-pdf extrae los consumos del PDF (Claude server-side).
+  // 2) /api/reconcile-pdf cruza esos consumos contra los datos REALES del tab
+  //    Tarjeta de cada titular (Sheets API), no contra el historial en memoria.
   const handlePdfUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -318,73 +223,21 @@ Respondé "OK" o "ERROR: motivo".`;
         r.readAsDataURL(file);
       });
 
-      const resp = await fetch("https://api.anthropic.com/v1/messages", {
+      const parseResp = await fetch("/api/parse-pdf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-6",
-          max_tokens: 4000,
-          messages: [{
-            role: "user",
-            content: [
-              {
-                type: "document",
-                source: { type: "base64", media_type: "application/pdf", data: base64 }
-              },
-              {
-                type: "text",
-                text: `Extraé TODOS los consumos de este resumen de tarjeta de crédito.
-Separalos por titular si hay más de uno (ej: tarjeta principal y adicional).
-Ignorá impuestos, sellos, pagos anteriores y saldo anterior.
-Devolvé SOLO este JSON puro sin markdown:
-{
-  "banco": "nombre del banco",
-  "tarjeta": "VISA/Mastercard/etc",
-  "periodo": "Mes Año del resumen",
-  "total_pagar": 12345.67,
-  "titulares": [
-    {
-      "nombre": "ANDRES OSC OLIVEIRA",
-      "tarjeta_nro": "1504",
-      "consumos": [
-        {
-          "fecha": "01-05-26",
-          "descripcion": "YPF LAS TUNAS",
-          "cuota": "02/06",
-          "monto": 30000.00,
-          "moneda": "ARS"
-        }
-      ],
-      "total": 667124.39
-    }
-  ]
-}`
-              }
-            ]
-          }]
-        })
+        body: JSON.stringify({ pdfBase64: base64 }),
       });
+      const parsedPdf = await parseResp.json();
+      if (!parseResp.ok) throw new Error(parsedPdf.error || "error leyendo el PDF");
 
-      const data = await resp.json();
-      const text = data.content?.find(b => b.type === "text")?.text || "";
-      const result = JSON.parse(text.replace(/```json|```/g, "").trim());
-      
-      // Cross-reference against history loaded in app
-      // Mark each consumo as found/not found in history
-      result.titulares = result.titulares.map(t => ({
-        ...t,
-        esUsuario: t.nombre.toLowerCase().includes(cfg.nombre.toLowerCase().split(" ")[0]) ||
-                   t.nombre.toLowerCase().includes("oliveira") ||
-                   t.tarjeta_nro === "1504",
-        consumos: t.consumos.map(c => {
-          const montoAbs = Math.abs(c.monto);
-          const encontrado = history.some(h =>
-            Math.abs(Math.abs(h.monto) - montoAbs) < 10 ||
-            (h.detalle && h.detalle.toLowerCase().includes(c.descripcion.toLowerCase().slice(0, 6)))
-          );
-          return { ...c, registrado: encontrado };
-        })
-      }));
+      const reconcileResp = await fetch("/api/reconcile-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pdfData: parsedPdf }),
+      });
+      const result = await reconcileResp.json();
+      if (!reconcileResp.ok) throw new Error(result.error || "error cruzando el PDF");
 
       setPdfData(result);
       setScreen("pdf");
@@ -399,10 +252,12 @@ Devolvé SOLO este JSON puro sin markdown:
   // RENDER: PDF
   // ══════════════════════════════════════════════
   if (screen === "pdf" && pdfData) {
-    const totalConsumosAndres = pdfData.titulares.filter(t => t.esUsuario).reduce((s, t) => s + t.total, 0);
-    const totalConsumosOtro = pdfData.titulares.filter(t => !t.esUsuario).reduce((s, t) => s + t.total, 0);
+    // El server ya no decide esUsuario (no sabe quién está logueado) — lo
+    // calculamos acá comparando usuarioKey contra el usuario actual.
+    const totalConsumosAndres = pdfData.titulares.filter(t => t.usuarioKey === usuario).reduce((s, t) => s + t.total, 0);
+    const totalConsumosOtro = pdfData.titulares.filter(t => t.usuarioKey !== usuario).reduce((s, t) => s + t.total, 0);
     const todosLosConsumos = pdfData.titulares.flatMap(t =>
-      t.consumos.map(c => ({ ...c, titular: t.nombre, esUsuario: t.esUsuario }))
+      t.consumos.map(c => ({ ...c, titular: t.nombre, esUsuario: t.usuarioKey === usuario }))
     );
     const sinRegistrar = todosLosConsumos.filter(c => !c.registrado);
     const registrados = todosLosConsumos.filter(c => c.registrado);
@@ -422,15 +277,19 @@ Devolvé SOLO este JSON puro sin markdown:
 
           {/* Totales por titular */}
           <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
-            {pdfData.titulares.map(t => (
-              <div key={t.nombre} style={{ flex: 1, background: cfg.colorCard, border: `1px solid ${cfg.colorBorder}`, borderRadius: 14, padding: "12px 14px" }}>
-                <div style={{ color: cfg.colorMuted, fontSize: 11, marginBottom: 4 }}>{t.esUsuario ? cfg.nombre : "Clarita"}</div>
-                <div style={{ color: t.esUsuario ? cfg.colorAccent : otroCfg.colorAccent, fontWeight: 700, fontSize: 16, fontVariantNumeric: "tabular-nums" }}>
-                  ${t.total.toLocaleString("es-AR")}
+            {pdfData.titulares.map(t => {
+              const esUsuario = t.usuarioKey === usuario;
+              return (
+                <div key={t.nombre} style={{ flex: 1, background: cfg.colorCard, border: `1px solid ${cfg.colorBorder}`, borderRadius: 14, padding: "12px 14px" }}>
+                  <div style={{ color: cfg.colorMuted, fontSize: 11, marginBottom: 4 }}>{esUsuario ? cfg.nombre : otroNombre}</div>
+                  <div style={{ color: esUsuario ? cfg.colorAccent : otroCfg.colorAccent, fontWeight: 700, fontSize: 16, fontVariantNumeric: "tabular-nums" }}>
+                    ${t.total.toLocaleString("es-AR")}
+                  </div>
+                  <div style={{ color: cfg.colorDim, fontSize: 11, marginTop: 3 }}>{t.consumos.length} consumos</div>
+                  {t.sheetNota && <div style={{ color: "#fbbf24", fontSize: 10, marginTop: 3 }}>{t.sheetNota}</div>}
                 </div>
-                <div style={{ color: cfg.colorDim, fontSize: 11, marginTop: 3 }}>{t.consumos.length} consumos</div>
-              </div>
-            ))}
+              );
+            })}
             <div style={{ flex: 1, background: "#ef444415", border: "1px solid #ef444430", borderRadius: 14, padding: "12px 14px" }}>
               <div style={{ color: "#f87171", fontSize: 11, marginBottom: 4 }}>Total a pagar</div>
               <div style={{ color: "#f87171", fontWeight: 700, fontSize: 16, fontVariantNumeric: "tabular-nums" }}>
@@ -456,7 +315,7 @@ Devolvé SOLO este JSON puro sin markdown:
                       {c.cuota && <span style={{ color: cfg.colorMuted, fontSize: 11, marginLeft: 6 }}>{c.cuota}</span>}
                     </div>
                     <div style={{ color: cfg.colorMuted, fontSize: 11, marginTop: 2 }}>
-                      {c.fecha} · {c.esUsuario ? cfg.nombre : "Clarita"}
+                      {c.fecha} · {c.esUsuario ? cfg.nombre : otroNombre}
                     </div>
                   </div>
                   <div style={{ color: "#fbbf24", fontWeight: 700, fontSize: 14, fontVariantNumeric: "tabular-nums", flexShrink: 0 }}>
@@ -484,7 +343,7 @@ Devolvé SOLO este JSON puro sin markdown:
                       {c.cuota && <span style={{ color: cfg.colorMuted, fontSize: 11, marginLeft: 6 }}>{c.cuota}</span>}
                     </div>
                     <div style={{ color: cfg.colorMuted, fontSize: 11, marginTop: 2 }}>
-                      {c.fecha} · {c.esUsuario ? cfg.nombre : "Clarita"}
+                      {c.fecha} · {c.esUsuario ? cfg.nombre : otroNombre}
                     </div>
                   </div>
                   <div style={{ color: "#4ade80", fontWeight: 700, fontSize: 14, fontVariantNumeric: "tabular-nums", flexShrink: 0 }}>
@@ -648,17 +507,32 @@ Devolvé SOLO este JSON puro sin markdown:
                   ? `Registrado en tu planilla personal y en la planilla compartida con ${otroNombre}.`
                   : "Registrado en tu planilla personal."}
               </div>
+              {saveDetail?.tarjetaError && (
+                <div style={{ color: "#fcd34d", fontSize: 12, marginTop: 6 }}>ℹ️ {friendlyError(saveDetail.tarjetaError)}</div>
+              )}
             </div>
           )}
           {saveResult === "partial" && (
             <div style={{ background: "#f59e0b20", border: "1px solid #f59e0b50", borderRadius: 14, padding: "14px 18px" }}>
               <div style={{ color: "#fbbf24", fontWeight: 600, fontSize: 14, marginBottom: 4 }}>⚠️ Guardado parcialmente</div>
               <div style={{ color: "#fcd34d", fontSize: 13 }}>Se guardó en la planilla personal pero hubo un problema con la planilla compartida. Revisala manualmente.</div>
+              {saveDetail?.sharedError && (
+                <div style={{ color: "#fcd34d", fontSize: 12, marginTop: 6 }}>{friendlyError(saveDetail.sharedError)}</div>
+              )}
+              {saveDetail?.tarjetaError && (
+                <div style={{ color: "#fcd34d", fontSize: 12, marginTop: 6 }}>ℹ️ {friendlyError(saveDetail.tarjetaError)}</div>
+              )}
             </div>
           )}
           {saveResult === "error" && (
             <div style={{ background: "#ef444420", border: "1px solid #ef444450", borderRadius: 14, padding: "14px 18px" }}>
               <div style={{ color: "#f87171", fontWeight: 600, fontSize: 14, marginBottom: 4 }}>⚠️ No se pudo guardar automáticamente</div>
+              {saveDetail?.personalError && (
+                <div style={{ color: "#fca5a5", fontSize: 12, marginBottom: 6 }}>{friendlyError(saveDetail.personalError)}</div>
+              )}
+              {saveDetail?.error && !saveDetail?.personalError && (
+                <div style={{ color: "#fca5a5", fontSize: 12, marginBottom: 6 }}>{friendlyError(saveDetail.error)}</div>
+              )}
               <div style={{ color: "#fca5a5", fontSize: 12 }}>Cargalo a mano: {parsed.categoria} · ${Math.abs(parsed.monto).toLocaleString("es-AR")} · {parsed.mes}</div>
             </div>
           )}
