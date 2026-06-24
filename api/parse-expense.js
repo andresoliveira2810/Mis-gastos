@@ -1,9 +1,28 @@
 // api/parse-expense.js
-// Reemplaza el fetch directo (sin auth) que hacía el browser a la Claude API.
 // Recibe { usuario, texto } y devuelve el gasto/ingreso parseado como JSON.
+// Usa Gemini (capa gratuita) en vez de Claude — ver lib/geminiClient.js.
 
-import { callClaude, parseJsonFromText } from "../lib/anthropicClient.js";
+import { callGemini, parseJsonFromText } from "../lib/geminiClient.js";
 import { CONFIG, CATEGORIES_ANDRES, CATEGORIES_CLARITA, ALL_SHARED_CATS, getNowMesAnio } from "../shared/config.js";
+
+const ESQUEMA_GASTO = {
+  type: "object",
+  properties: {
+    tipo: { type: "string", enum: ["gasto", "ingreso", "tarjeta_consumo", "tarjeta_cuotas", "desconocido"] },
+    categoria: { type: "string" },
+    monto: { type: "number" },
+    mes: { type: "string" },
+    anio: { type: "integer" },
+    detalle: { type: ["string", "null"] },
+    tarjeta: { type: ["string", "null"] },
+    cuotas: { type: ["integer", "null"] },
+    monto_por_cuota: { type: ["number", "null"] },
+    fecha_compra: { type: ["string", "null"] },
+    puede_ser_compartido: { type: "boolean" },
+    resumen: { type: "string" },
+  },
+  required: ["tipo", "categoria", "monto", "mes", "anio", "puede_ser_compartido", "resumen"],
+};
 
 function buildPrompt(usuario) {
   const cats = usuario === "andres" ? CATEGORIES_ANDRES : CATEGORIES_CLARITA;
@@ -54,10 +73,11 @@ export default async function handler(req, res) {
       return;
     }
 
-    const text = await callClaude({
+    const text = await callGemini({
       system: buildPrompt(usuario),
-      messages: [{ role: "user", content: String(texto).trim() }],
-      maxTokens: 600,
+      parts: [{ text: String(texto).trim() }],
+      schema: ESQUEMA_GASTO,
+      maxOutputTokens: 600,
     });
 
     const result = parseJsonFromText(text);
