@@ -27,7 +27,7 @@ const ESQUEMA_PDF = {
         type: "object",
         properties: {
           nombre: { type: "string" },
-          tarjeta_nro: { type: ["string", "null"] },
+          tarjeta_nro: { type: "string", nullable: true },
           consumos: {
             type: "array",
             items: {
@@ -35,7 +35,7 @@ const ESQUEMA_PDF = {
               properties: {
                 fecha: { type: "string" },
                 descripcion: { type: "string" },
-                cuota: { type: ["string", "null"] },
+                cuota: { type: "string", nullable: true },
                 monto: { type: "number" },
                 moneda: { type: "string" },
               },
