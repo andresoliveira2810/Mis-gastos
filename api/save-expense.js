@@ -43,6 +43,7 @@ export default async function handler(req, res) {
         categoria: parsed.categoria,
         monto: parsed.monto,
         mesNombre: parsed.mes,
+        anio: parsed.anio,
         headerRowIdx: cfg.personalHeaderRow,
         catColIdx: cfg.personalCatCol,
       });
