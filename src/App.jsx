@@ -7,7 +7,7 @@ import { SHARED_SHEET_ID, getNowMesAnio } from "../shared/config.js";
 const CONFIG = {
   andres: {
     nombre: "Andrés",
-    sheetId: "1FYHDh53HE_4o_zCNoHinEf_iuSLPqcpX",
+    sheetId: "1Rn-nS8uGYMxhmvi9XK3z39sj1VO1F8XKOqe-eRetgmc",
     color: "#22c55e", colorDeep: "#16a34a",
     colorDark: "#080c09", colorSurface: "#0f1a11",
     colorCard: "#131f15", colorBorder: "#1c2e1f",
