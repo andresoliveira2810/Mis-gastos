@@ -5,7 +5,7 @@
 export const CONFIG = {
   andres: {
     nombre: "Andrés",
-    sheetId: "1FYHDh53HE_4o_zCNoHinEf_iuSLPqcpX",
+    sheetId: "1Rn-nS8uGYMxhmvi9XK3z39sj1VO1F8XKOqe-eRetgmc",
     // Layout real de "GASTOS PERSONALES.xlsx" (confirmado inspeccionando el sheet real):
     personalTab: "Gastos",
     personalHeaderRow: 1, // fila 2 (0-indexed) — ahí están los headers de mes
