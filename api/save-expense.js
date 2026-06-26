@@ -46,6 +46,8 @@ export default async function handler(req, res) {
         anio: parsed.anio,
         headerRowIdx: cfg.personalHeaderRow,
         catColIdx: cfg.personalCatCol,
+        detalle: parsed.detalle,
+        variablesCategoria: cfg.variablesCategoria,
       });
     } catch (err) {
       resultado.personalError = err.message;
