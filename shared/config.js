@@ -5,12 +5,20 @@
 export const CONFIG = {
   andres: {
     nombre: "Andrés",
-    sheetId: "1Rn-nS8uGYMxhmvi9XK3z39sj1VO1F8XKOqe-eRetgmc",
-    // Layout real de "GASTOS PERSONALES.xlsx" (confirmado inspeccionando el sheet real):
+    // Planilla nueva "Gastos Andrés", rediseñada por el usuario el 26/06/2026 (reemplaza
+    // la vieja, muy "toqueteada"). Layout confirmado inspeccionando el sheet real:
+    sheetId: "1MBJIekg5jA46YHcgzwXl6qcPClTI93ZNUxCsY9P5TC4",
     personalTab: "Gastos",
-    personalHeaderRow: 1, // fila 2 (0-indexed) — ahí están los headers de mes
+    personalHeaderRow: 1, // fila 2 (0-indexed) — ahí están los headers de mes (fecha)
     personalCatCol: 1, // columna B — ahí están las categorías
     tarjetaTab: "Tarjeta",
+    // La celda "Gastos varios" de la grilla principal es una FÓRMULA (=-TOTAL del bloque
+    // "Variables" itemizado a la derecha) — nunca hay que escribirla directo, se rompería.
+    // Esta categoría (y cualquier otra que no tenga fila propia en la grilla, según pidió
+    // el usuario: "si hay alguno que no sabes donde va ponelo ahí") se itemiza en ese
+    // bloque en vez de pisar una celda. Ver findVariablesBlock/appendVariableExpense en
+    // lib/googleSheets.js.
+    variablesCategoria: "Gastos varios",
   },
   clarita: {
     nombre: "Clarita",
@@ -39,7 +47,9 @@ export const SHARED_SHEET_TAB = "Hoja 1";
 export const ALL_SHARED_CATS = ["Alquiler", "Servicios", "Supermercado", "Verduleria", "Carniceria", "Tarjeta", "Perris", "Varios"];
 
 export const CATEGORIES_ANDRES = [
-  "Sueldo", "Otros ingresos", "Reintegro tarjeta", "Rescate Fima",
+  // "Rescate Fima" → "Reintegro Clari": la planilla nueva renombró esa fila (confirmado
+  // inspeccionando el sheet real el 26/06/2026).
+  "Sueldo", "Otros ingresos", "Reintegro tarjeta", "Reintegro Clari",
   "Tarjeta", "Alquiler", "Agua", "EPE", "Internet", "Gas",
   "Casa", "Peluquería", "Combustible", "Supermercado", "Verduleria",
   "Gastos comidas", "Inversiones", "Plataformas y seguros", "Gastos varios", "Regalos",
