@@ -30,12 +30,13 @@ export const CONFIG = {
 export const SHARED_SHEET_ID = "1Q_n2aWCg3BQJC0z_x_VIpEEqjaZ15KwmfJ1P7snabWE";
 export const SHARED_SHEET_TAB = "Hoja 1";
 
-// Mapeo exacto de categorías a tabla en el sheet compartido.
-// Tabla "Principio del mes": Alquiler, Servicios, Supermercado, Verduleria, Carniceria, Tarjeta, Varios
-// Tabla "Resto del mes": Servicios, Supermercado, Verduleria, Carniceria, Perris, Varios, Casa
-export const SHARED_CATS_PRINCIPIO = ["Alquiler", "Servicios", "Supermercado", "Verduleria", "Carniceria", "Tarjeta", "Varios"];
-export const SHARED_CATS_RESTO = ["Servicios", "Supermercado", "Verduleria", "Carniceria", "Perris", "Varios", "Casa"];
-export const ALL_SHARED_CATS = [...new Set([...SHARED_CATS_PRINCIPIO, ...SHARED_CATS_RESTO])];
+// El usuario unificó las tablas "Principio del mes" y "Resto del mes" en una sola
+// tabla (confirmado inspeccionando el sheet real el 25/06/2026). Categorías reales
+// de esa tabla única (fila de encabezado, columnas B en adelante): Alquiler,
+// Servicios, Supermercado, Verduleria, Carniceria, Tarjeta, Perris, Varios.
+// "Casa" ya no es una columna del sheet compartido (sigue existiendo como categoría
+// personal en CATEGORIES_ANDRES/CATEGORIES_CLARITA, pero no se comparte).
+export const ALL_SHARED_CATS = ["Alquiler", "Servicios", "Supermercado", "Verduleria", "Carniceria", "Tarjeta", "Perris", "Varios"];
 
 export const CATEGORIES_ANDRES = [
   "Sueldo", "Otros ingresos", "Reintegro tarjeta", "Rescate Fima",
